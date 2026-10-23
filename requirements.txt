@@ -1,5 +1,5 @@
-timm
-matplotlib
-scikit-learn
-tqdm
-pytest
+timm==1.0.30
+matplotlib==3.10.3
+scikit-learn==1.7.0
+tqdm==4.66.5
+pytest==9.1.1
