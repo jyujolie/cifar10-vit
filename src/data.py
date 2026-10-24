@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
-from torchvision.transforms import InterpolationMode
+from torchvision.transforms import InterpolationMode, RandAugment
 
 IMAGE_SIZE = 224
 MEAN = (0.5, 0.5, 0.5)
@@ -45,13 +45,33 @@ def stratified_split_indices(
     return train_indices, val_indices
 
 
-def image_transform(*, training: bool) -> transforms.Compose:
-    """Use light augmentation for training and deterministic evaluation."""
+def image_transform(
+    *,
+    training: bool,
+    rand_augment_ops: int = 0,
+    rand_augment_magnitude: int = 0,
+) -> transforms.Compose:
+    """Use light augmentation for training and deterministic evaluation.
+
+    `rand_augment_ops` and `rand_augment_magnitude` add RandAugment on top of the
+    basic crop and flip. Both must be positive to enable it, or both zero to keep
+    the plain pipeline; mixing the two is rejected so a half-configured run cannot
+    silently happen. RandAugment is only ever applied to the training transform.
+    """
+    if (rand_augment_ops == 0) != (rand_augment_magnitude == 0):
+        raise ValueError("rand_augment_ops and rand_augment_magnitude must be given together")
+    if rand_augment_ops < 0 or rand_augment_magnitude < 0:
+        raise ValueError("rand_augment_ops and rand_augment_magnitude cannot be negative")
+
     operations = []
     if training:
         operations.extend(
             [transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip()]
         )
+        if rand_augment_ops > 0:
+            operations.append(
+                RandAugment(num_ops=rand_augment_ops, magnitude=rand_augment_magnitude)
+            )
     operations.extend(
         [
             transforms.Resize((IMAGE_SIZE, IMAGE_SIZE), interpolation=InterpolationMode.BICUBIC),
@@ -64,17 +84,23 @@ def image_transform(*, training: bool) -> transforms.Compose:
 
 def make_train_val_loaders(
     data_dir: str | Path, *, batch_size: int = 32, workers: int = 2, seed: int = 42,
-    val_per_class: int = 500,
+    val_per_class: int = 500, rand_augment_ops: int = 0, rand_augment_magnitude: int = 0,
 ) -> tuple[DataLoader, DataLoader]:
     """Return 45,000 training and 5,000 validation images from CIFAR-10.
 
     The validation split is stratified: exactly `val_per_class` images per class,
     which keeps the 10 classes in their natural 10% proportion and makes the
-    validation accuracy comparable across runs.
+    validation accuracy comparable across runs. RandAugment is applied to the
+    training transform only.
     """
     data_dir = Path(data_dir)
     train_dataset = datasets.CIFAR10(
-        data_dir, train=True, download=True, transform=image_transform(training=True)
+        data_dir, train=True, download=True,
+        transform=image_transform(
+            training=True,
+            rand_augment_ops=rand_augment_ops,
+            rand_augment_magnitude=rand_augment_magnitude,
+        ),
     )
     val_dataset = datasets.CIFAR10(
         data_dir, train=True, download=True, transform=image_transform(training=False)

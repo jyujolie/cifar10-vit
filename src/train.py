@@ -115,6 +115,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-epochs", type=int, default=2)
     parser.add_argument("--clip-grad-norm", type=float, default=1.0)
     parser.add_argument("--val-per-class", type=int, default=500)
+    parser.add_argument("--rand-augment-ops", type=int, default=0)
+    parser.add_argument("--rand-augment-magnitude", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-train-batches", type=int, default=None)
     parser.add_argument("--max-val-batches", type=int, default=None)
@@ -137,6 +139,10 @@ def main() -> None:
         raise SystemExit("clip-grad-norm must be positive when given")
     if args.val_per_class < 1:
         raise SystemExit("val-per-class must be positive")
+    if (args.rand_augment_ops == 0) != (args.rand_augment_magnitude == 0):
+        raise SystemExit("rand-augment-ops and rand-augment-magnitude must be given together")
+    if args.rand_augment_ops < 0 or not 0 <= args.rand_augment_magnitude <= 30:
+        raise SystemExit("rand-augment-ops must be non-negative and magnitude within 0..30")
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -148,6 +154,8 @@ def main() -> None:
     train_loader, val_loader = make_train_val_loaders(
         args.data_dir, batch_size=args.batch_size, workers=args.workers,
         seed=args.seed, val_per_class=args.val_per_class,
+        rand_augment_ops=args.rand_augment_ops,
+        rand_augment_magnitude=args.rand_augment_magnitude,
     )
     model = build_model(pretrained=True).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.05)
@@ -186,6 +194,8 @@ def main() -> None:
                             "warmup_epochs": args.warmup_epochs, "min_lr": args.min_lr,
                             "clip_grad_norm": args.clip_grad_norm,
                             "val_per_class": args.val_per_class,
+                            "rand_augment_ops": args.rand_augment_ops,
+                            "rand_augment_magnitude": args.rand_augment_magnitude,
                             "history": history}, indent=2), encoding="utf-8"
             )
             print(

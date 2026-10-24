@@ -1,4 +1,7 @@
-from src.data import stratified_split_indices
+from torchvision import transforms
+from torchvision.transforms import RandAugment
+
+from src.data import image_transform, stratified_split_indices
 
 
 def test_stratified_split_is_reproducible_and_has_no_overlap():
@@ -30,3 +33,37 @@ def test_stratified_split_rejects_invalid_sizes():
             pass
         else:
             raise AssertionError(f"val_per_class={invalid} should be rejected")
+
+
+def has_operation(pipeline, operation_type):
+    return any(isinstance(step, operation_type) for step in pipeline.transforms)
+
+
+def test_rand_augment_is_optional_and_only_in_training():
+    plain = image_transform(training=True)
+    strong = image_transform(training=True, rand_augment_ops=2, rand_augment_magnitude=9)
+
+    assert not has_operation(plain, RandAugment)
+    assert has_operation(strong, RandAugment)
+    assert strong.transforms[2].num_ops == 2
+    assert strong.transforms[2].magnitude == 9
+
+
+def test_evaluation_transform_never_augments():
+    for options in ({}, {"rand_augment_ops": 2, "rand_augment_magnitude": 9}):
+        pipeline = image_transform(training=False, **options)
+        assert not has_operation(pipeline, RandAugment)
+        assert not has_operation(pipeline, transforms.RandomCrop)
+        assert not has_operation(pipeline, transforms.RandomHorizontalFlip)
+
+
+def test_rand_augment_arguments_must_be_paired():
+    for ops, magnitude in ((2, 0), (0, 9), (-1, 9), (2, -1)):
+        try:
+            image_transform(
+                training=True, rand_augment_ops=ops, rand_augment_magnitude=magnitude
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"ops={ops}, magnitude={magnitude} should be rejected")
